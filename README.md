@@ -4,6 +4,6 @@ Monitoring
 Monitoring plugins and helper for Nagios
 
 ## Plugins
-- check_AWS_EC2
+- check_aws_ec2
 
 ## Helper
