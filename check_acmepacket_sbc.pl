@@ -24,7 +24,7 @@
 # 20171116 azalane - Initial version
 ########################################################################
 
-my $release = "v20171116" ;
+my $release = "r20171123.scz" ;
 
 #######################################################################
 # OID To Check
@@ -43,24 +43,25 @@ use Getopt::Long qw(:config no_ignore_case bundling);
 use File::Basename;
 use vars qw($PROGNAME $VERSION);
 use lib '.';
-use lib '/usr/lib/nagios/plugins';
+use lib '/usr/local/nagios/OA_nagios/plugins';
 use utils qw(%ERRORS);
 use Net::SNMP;
 
 $PROGNAME = basename($0);
-$VERSION = 'Revision: 1.0 '.$release;
+$VERSION = 'Version: 1.0 '.$release;
 $ENV{LC_ALL} = 'POSIX';
 
 my ($opt_h, $opt_c, $opt_w, $opt_v);
-my ($host, $modes, $snmp_timeout, $snmp_retries, $snmp_community);
+our ($host, $modes, $snmp_timeout, $snmp_retries, $snmp_community,$redundancy);
 my ($status, @modes, @critical, @warning );
-my ($mode, $critical, $warning);
+our ($mode, $critical, $warning);
 
 GetOptions( "h"   => \$opt_h, "help" => \$opt_h,
             "w=s" => \$opt_w, "warning=s"  => \$opt_w,
             "c=s" => \$opt_c, "critical=s" => \$opt_c,
             "m=s" => \$modes, "mode=s" => \$modes,
             "H=s" => \$host, "host=s" => \$host,
+			"R=s" => \$redundancy, "redundancy=s" => \$redundancy,
             "C=s" => \$snmp_community, "snmp_community=s" => \$snmp_community,
             "t=i" => \$snmp_timeout, "snmp_timeout=i" => \$snmp_timeout,
             "r=i" => \$snmp_retries, "snmp_retries=i" => \$snmp_retries,
@@ -159,7 +160,7 @@ foreach $mode (@modes)
         }
         elsif( $mode =~ /health_score/i )
         {
-				$status = check_simple($session, $warning, $critical,SystemHealth,'% of health');
+				$status = check_health($session, $warning, $critical);
         }
         elsif( $mode =~ /current_sessions/i )
         {
@@ -205,24 +206,60 @@ sub check_simple
 
         if( !defined($results) )
         {
-                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : invalid response from host.'\n";
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : invalid response from host.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
         my $describ = $results->{$oid_param};
         if( $describ eq 'noSuchObject' )
         {
-                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : object not found for host.'\n";
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : object not found for host.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
 
         if ( $describ > $thrc )
         {
-                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : CRITICAL - $describ$message.'\n";
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - $describ$message.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
         elsif ( defined($thrw) && $describ > $thrw )
         {
-                print "KO OA DATE='$DT' VAL='".$ERRORS{'WARNING'}."' MSG='$modes : WARNING - $describ$message.'\n";
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'WARNING'}."' MSG='$mode : WARNING - $describ$message.'\n";
+                exit $ERRORS{'WARNING'};
+        }
+        return 1;
+}
+#######################################################################
+#	SUBS CHECK HEALTH
+#######################################################################
+sub check_health
+{
+        my ($session, $thrw, $thrc) = @_;
+        my @oids = (
+               SystemHealth,
+        );
+
+        my $results = $session->get_request('-varbindlist' => \@oids);
+
+        if( !defined($results) )
+        {
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : invalid response from host.'\n";
+                exit $ERRORS{'CRITICAL'};
+        }
+        my $describ = $results->{&SystemHealth};
+        if( $describ eq 'noSuchObject' )
+        {
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : object not found for host.'\n";
+                exit $ERRORS{'CRITICAL'};
+        }
+
+        if ( $describ < $thrc )
+        {
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - $describ% of health.'\n";
+                exit $ERRORS{'CRITICAL'};
+        }
+        elsif ( defined($thrw) && $describ < $thrw )
+        {
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'WARNING'}."' MSG='$mode : WARNING - $describ% of health.'\n";
                 exit $ERRORS{'WARNING'};
         }
         return 1;
@@ -232,7 +269,7 @@ sub check_simple
 #######################################################################
 sub check_mode
 {
-        my ($session, $thrw, $thrc) = @_;
+        my ($session, $thrw, $thrc,) = @_;
         my @oids = (
                 SbcMode,
         );
@@ -242,22 +279,73 @@ sub check_mode
 
         if( !defined($results) )
         {
-                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : invalid response from host.'\n";
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : invalid response from host.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
         my $describ = $results->{&SbcMode};
         if( $describ eq 'noSuchObject' )
         {
-                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : object not found for host.'\n";
+                print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : object not found for host.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
 
         if ( $describ < 2 or $describ > 3 )
         {
-                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : CRITICAL - SBS is in $coresp[$describ] mode.'\n";
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - SBC is in $coresp[$describ] mode.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
-        return 1;
+		#Clustering mode get state of other sbc
+		if ( defined($redundancy) )
+		{
+			#Gest information of the second SBC
+			my ($session2, $error2, @args2);
+			push(@args2, (
+					'-version'       => "2c",
+					'-hostname'      => $redundancy,
+					'-timeout'       => $snmp_timeout,
+					'-retries'       => $snmp_retries,
+					'-community' => $snmp_community
+					) );
+
+			($session2, $error2) = Net::SNMP->session( @args2 );
+			if( !defined($session2) )
+			{
+					print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='no SNMP session for the other member of cluster : $redundancy'\n";
+					exit $ERRORS{'CRITICAL'};
+			}
+			my $results2 = $session2->get_request('-varbindlist' => \@oids);
+			if( !defined($results) )
+			{
+					print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : invalid response from the other member of cluster : $redundancy'\n";
+					exit $ERRORS{'CRITICAL'};
+			}
+			my $describ2 = $results2->{&SbcMode};
+			if( $describ2 eq 'noSuchObject' )
+			{
+					print "KO OA - DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : object not found for the other member of cluster : $redundancy'\n";
+					exit $ERRORS{'CRITICAL'};
+			}
+			#Check if state of redundancy is good
+			if ( $describ2 eq $describ )
+			{
+					print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - All members of cluster are in $coresp[$describ] mode.'\n";
+					exit $ERRORS{'CRITICAL'};
+			}
+			elsif ( $describ2 !=2 and $describ !=2)
+			{
+					print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - No members of cluster are in Active mode.'\n";
+					exit $ERRORS{'CRITICAL'};			
+			}
+			else 
+			{
+				print "OK OA DATE='$DT' VAL='".$ERRORS{'OK'}."' MSG='$mode : OK - SBC $host is $coresp[$describ] and SBC $redundancy is $coresp[$describ2].'\n";
+				exit $ERRORS{'OK'};
+			}
+
+		}
+		print "OK OA DATE='$DT' VAL='".$ERRORS{'OK'}."' MSG='$mode : OK - SBC $host is $coresp[$describ].'\n";
+        exit $ERRORS{'OK'};
+		
 }
 #######################################################################
 #	SUBS CHECK CPU
@@ -275,7 +363,7 @@ sub check_cpu
 
         if( $status != 1 )
         {
-                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : CRITICAL - Invalid response from host: $results.'\n";
+                print "KO OA DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - Invalid response from host: $results.'\n";
                 exit $ERRORS{'CRITICAL'};
         }
 		
@@ -295,7 +383,7 @@ sub check_cpu
         # no cpu found !
         if( $#indexes == -1 )
         {
-                print "KO DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : CRITICAL - No CPU found !'\n";
+                print "KO DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - No CPU found !'\n";
                 exit $ERRORS{'CRITICAL'};
         }
 
@@ -306,12 +394,12 @@ sub check_cpu
                 $status = unpack("c*", $results->{&UnitCpuState.'.'.$idx} );
                 if ( $status > $thrc )
                 {
-                        print "KO DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$modes : CRITICAL - CPU $idx : $status% of use.'\n";
+                        print "KO DATE='$DT' VAL='".$ERRORS{'CRITICAL'}."' MSG='$mode : CRITICAL - CPU $idx : $status% of use.'\n";
                         exit $ERRORS{'CRITICAL'};
                 }
                 elsif ( defined($thrw) && $status > $thrw )
                 {
-                        print "KO DATE='$DT' VAL='".$ERRORS{'WARNING'}."' MSG='$modes : WARNING -CPU $idx : $status% of use.'\n";
+                        print "KO DATE='$DT' VAL='".$ERRORS{'WARNING'}."' MSG='$mode : WARNING -CPU $idx : $status% of use.'\n";
                         exit $ERRORS{'WARNING'};
                 }
         }
@@ -366,12 +454,18 @@ USAGE :
         Specify the module to check. May be one of :
             memory_used : Memory used by SBC
 			licence_used : Percentage of licensed sessions currently in progress.
-			health_score : System health percentage. 100, which understands as 100%, is healthiest.
+			health_score : System health percentage.0>>100, 100% is healthiest. Alert if health_score is under threshold. 
 			current_sessions : Number of Global Concurrent Sessions.
 			current_calls : Number of current global call per second.
 			sbc_mode : Running mode of SBC. Active(2) et Standby(3) are OK, Other mode are KO.
 			cpu_load_m : global average CPU used. Average of all CPU used on out of limit to return bad status.
-			cpu_load_u : unitary average CPU used. One or more CPU out of limit to return bad status. 
+			cpu_load_u : unitary average CPU used. One or more CPU out of limit to return bad status.
+
+-R | --redundancy <IP>
+        Ip address of the other member of cluster. Use it only with check mode "sbc_mode". 
+		If this parameter is specified, sbc_mode check if the host is in active or standby mode, if them two SBC 
+		aren't in the same mode, and if there is at least one SBC in active mode.
+		If isn't specified, sbc_mode is in classical.
 
 -c | --critical
         Exit with CRITICAL status if the monitored value is more than the critical value.
@@ -386,19 +480,19 @@ USAGE :
         No default value.
 
 -t | --snmp_timeout <value>
-  set the request timeout (in seconds) for SNMP session be established.
-  Default value: 10
+		set the request timeout (in seconds) for SNMP session be established.
+		Default value: 10
 
 -r | --snmp_retries <value>
         set the number of retries after the request is timed out.
         Default value: 0
 
 -v | --version
-  Dispolay the version.
-  current is $VERSION
+		Dispolay the version.
+		current is $VERSION
 
 -h | --help
-  Show this help.
+		Show this help.
 
 EOT
 }
